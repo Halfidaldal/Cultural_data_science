@@ -1,0 +1,425 @@
+---
+title: "Cultural"
+author: "Johannes"
+date: "2025-11-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r cars}
+
+library(readxl)
+library(tidyr)
+library(ggplot2)
+```
+
+
+```{r}
+library(lubridate)
+library(dplyr)
+
+df <- read_excel("Twitter_Economic_Uncertainty.xlsx")
+df$date <- as.Date(df$date)
+```
+
+
+```{r pressure, echo=FALSE}
+
+
+df_yearly <- df %>% 
+  mutate(year = year(date)) %>% 
+  group_by(year) %>% 
+  summarise(teu_yearly = mean(`TEU-USA`, na.rm = TRUE),tmu_yearly = mean(`TMU-WGT`, na.rm = TRUE) )
+
+
+
+ggplot(df_yearly, aes(x = year, y = teu_yearly)) +
+  geom_line(color = "#2C7BB6", linewidth = 1.2) +
+  geom_point(color = "#2C7BB6", size = 2) +
+  labs(
+    title = "Yearly average Economic Uncertainty on Twitter",
+    x = "Year",
+    y = "Average Uncertainty"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+```
+```{r}
+df_un <- read.csv("UNRATE.csv")
+df_un$observation_date <- as.Date(df_un$observation_date) 
+
+df_un <- df_un %>% mutate(UNRATE_delta = UNRATE-lag(UNRATE))
+
+df_un_year <- df_un %>% mutate(Year = year(observation_date)) %>% group_by(Year) %>% summarise(UN = mean(UNRATE), UN_d = mean(UNRATE_delta))
+
+df_un <- df_un %>% mutate(UNRATE_delta_log = log(UNRATE_delta))
+ggplot(df_un, aes(x = observation_date, y = UNRATE)) + geom_line()
+ggplot(df_un_year, aes(x = Year, y = UN_d)) + geom_line()
+
+```
+```{r}
+library(readr)
+library(purrr)
+
+files <- list.files("yield", full.names = TRUE, pattern = "\\.csv$")
+
+yield_curve <- files %>%
+  map_df(read_csv)
+yield_curve$Date <- as.Date(yield_curve$Date, format = "%m/%d/%y")
+yield_curve <- yield_curve %>% mutate(spread = `10 Yr`-`3 Mo`)
+
+yield_monthly <- yield_curve %>%
+  mutate(month = floor_date(Date, "month")) %>%
+  group_by(month) %>%
+  summarise(
+    spread = mean(spread, na.rm = TRUE),
+  ) %>%
+  mutate(inverted = spread < 0)
+
+yield_yearly <- yield_curve %>%
+  mutate(year = floor_date(Date, "year")) %>%
+  group_by(year) %>%
+  summarise(
+    spread = mean(spread, na.rm = TRUE),
+  ) %>%
+  mutate(inverted = spread < 0)
+
+ggplot(yield_monthly,aes(x=month, y=spread)) + geom_line()
+ggplot(yield_yearly, aes(x = year, y = spread)) +
+  geom_line(color = "#D7191C", linewidth = 1.2) +
+  geom_point(color = "#D7191C", size = 2) +
+  geom_hline(yintercept = 0, color = "red", linewidth = 1) +
+  labs(
+    title = "Yearly yield curve spread",
+    subtitle = "Ten year minus three month Treasury yield",
+    x = "Year",
+    y = "Spread (percentage points)"
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+
+
+
+```{r}
+df_pop <- read.csv("economic_frequency_data.csv")
+
+df_pop <- df_pop %>% group_by(year) %>% summarise(freq_ec = mean(freq_economic))
+df_un_year <- df_un_year %>%
+  mutate(year = Year)
+
+df_comb <- inner_join(df_pop, df_un_year, by = "year")
+
+ggplot(df_comb, aes(x = year, y = freq_ec)) +
+  geom_line(color = "#2C7BB6", linewidth = 1.2) +
+  geom_point(color = "#2C7BB6", size = 2) +
+  labs(
+    title = "Unemployment rate by year",
+    x = "Year",
+    y = "Unemployment rate"
+  ) +
+  theme_minimal(base_size = 14)
+
+model1 <- lm(freq_economic ~ year, data = df_comb) 
+summary(model1)
+```
+
+
+```{r}
+library(lmerTest)
+df_bb <- read.csv("Hot100.csv")
+df_comb <- inner_join(df_bb,df_un_year)
+
+df_comb <- df_comb %>% mutate(rec = ifelse(UN_d < 0,1,0))
+
+df_comb <- df_comb %>% group_by(year) %>% mutate(avg_dance = mean(Danceability))
+ggplot(df_comb, aes(x= year, y = avg_dance)) + geom_line()
+
+model1 <- lm(Danceability ~ UN_d, data=df_comb)
+
+model2 <- lmer(Loudness ~ UN + (1|Year), data=df_comb)
+summary(model1)
+summary(model2)
+```
+
+
+```{r}
+library(dplyr)
+library(stringr)
+library(tidytext)
+hot100 <- read.csv("billboard_24years_lyrics_spotify.csv")
+
+
+hot100_clean <- hot100 %>%
+  mutate(lyrics_lower = str_to_lower(lyrics))
+
+swears <- swear_words <- c(
+  "fuck", "fucking", "fucked", "fucker", "fuckers", "motherfucker", "motherfucking",
+  "shit", "bullshit", "horseshit",
+  "asshole", 
+  "bitch", "bitches", "bastard",
+  "dick", "dicks", "dickhead",
+  "pussy", "pussies", "cunt", "cunts", "prick",
+  "slut", "sluts", "whore", "whores",
+  
+  "cum", "cumming", "clit", "clitoris", "blowjob", "blowjobs", "handjob", "rimjob",
+  "deepthroat", "horny", "orgasm",
+  
+  "kill", "killing", "murder", "shoot", "stabbing", "choke", "blood",
+  
+  "coke", "cocaine", "crack", "meth", "heroin", "molly", "ecstasy", "lsd", "ketamine",
+  "opium", "lean", "weed", "marijuana", "joint", "percs", "percocet", "xan", "xanax",
+  "oxy", "oxycontin",
+  
+  "nigga", "nigger", "spic", "chink", "fag", "faggot", "dyke", "retard",
+  
+  "damn", "hell", "crap", "ass", "arse", "bloody"
+)
+
+
+swear_counts <- hot100_clean %>%
+  unnest_tokens(word, lyrics_lower) %>%
+  filter(word %in% swears) %>%
+  count(titletext, band_singer, year, name = "n_swears")
+
+hot100_with_swears <- hot100_clean %>%
+  distinct(titletext, band_singer, year) %>%
+  left_join(swear_counts, by = c("titletext", "band_singer", "year")) %>%
+  mutate(n_swears = replace_na(n_swears, 0))
+
+yearly_avg <- hot100_with_swears %>%
+  group_by(year) %>%
+  summarise(avg_swears = mean(n_swears, na.rm = TRUE))
+
+```
+
+```{r}
+
+ggplot(yearly_avg, aes(year, avg_swears)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    x = "Year",
+    y = "Average number of swear words per song",
+    title = "Profanity in Billboard Hot 100 songs"
+  )
+
+hot100_comb <- inner_join(hot100_with_swears,df_un_year)
+hot100_comb <- hot100_comb %>% filter(year>2010)
+ggplot(hot100_comb, aes(x = UN, y = n_swears)) +
+  geom_point() +
+  labs(
+    x = "Year",
+    y = "Average number of swear words per song",
+    title = "Profanity in Billboard Hot 100 songs"
+  )
+ggplot(yearly_avg, aes(x = avg_swears)) +
+  geom_density(fill = "lightblue", alpha = 0.6) +
+  labs(
+    x = "Average swear words per song",
+    y = "Density",
+    title = "Distribution of average yearly profanity in Hot 100 songs"
+  )
+ggplot(hot100_comb, aes(x = UN)) +
+  geom_density(fill = "lightblue", alpha = 0.6) +
+  labs(
+    x = "Average swear words per song",
+    y = "Density",
+    title = "Distribution of average yearly profanity in Hot 100 songs"
+  )
+hot100_comb <- hot100_comb %>%
+  mutate(z_swears = scale(n_swears)[,1], year = year-2010)
+model3_z <- lmer(n_swears ~ year + (1 | year), data = hot100_comb)
+summary(model3_z)
+
+ggplot(hot100_comb, aes(x = year, y = n_swears)) +
+  geom_point(alpha = 0.3, size = 2, color = "#2C7BB6") +
+  geom_smooth(method = "lm", color = "#2C7BB6", linewidth = 1.2) +
+  labs(
+    title = "swear frequency over time",
+    x = "Year since 2010",
+    y = "Z scored swear count"
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+```{r}
+#yield_yearly$year <- year(yield_yearly$year)
+yearly_avg <- yearly_avg %>% filter(year>2010)
+swear_yield <- inner_join(yearly_avg, yield_yearly)
+model4 <- lm(avg_swears ~ spread, data = swear_yield)
+summary(model4)
+ggplot(swear_yield, aes(x = spread, y = avg_swears)) +
+  geom_point(size = 3, alpha = 0.7, color = "#2C7BB6") +
+  geom_smooth(method = "lm", linewidth = 1.2, color = "#2C7BB6") +
+  labs(
+    title = "Average swear words and yield curve spread",
+    subtitle = "Uses average profanity per year and annual yield curve spread",
+    x = "Yield curve spread (ten year minus three month)",
+    y = "Average swear words per song"
+  ) +
+  theme_minimal(base_size = 14)
+```
+```{r}
+swear_twitter <- inner_join(yearly_avg,df_yearly)
+swear_twitter <- swear_twitter %>% filter(year>2010)
+model11 <- lm(avg_swears ~ tmu_yearly, data = swear_twitter)
+summary(model11)
+```
+
+
+```{r}
+UNRATE <- read.csv("UNRATE.csv")
+UNRATE <- UNRATE %>% rename(date = observation_date)
+UNRATE$date <- as.Date(UNRATE$date)
+twitter <- read_excel("Twitter_Economic_Uncertainty.xlsx")
+twitter$date <- as.Date(twitter$date)
+
+twitter_monthly <- twitter %>%
+  mutate(month = floor_date(date, "month")) %>%
+  group_by(month) %>%
+  summarise(avg_teu = mean(`TEU-WGT`, na.rm = TRUE))
+
+twitter_monthly <- twitter_monthly %>%
+  rename(date = month)
+
+un_twitter <- inner_join(twitter_monthly, UNRATE, by = "date")
+yield_monthly <- yield_monthly %>% rename(date = month)
+yield_twitter <- inner_join(twitter_monthly, yield_monthly, by = "date")
+```
+
+
+```{r}
+un_twitter <- un_twitter %>% mutate(avg_teu_z = (avg_teu-mean(avg_teu))/sd(avg_teu), UNRATE_z = (UNRATE-mean(UNRATE))/sd(UNRATE))
+
+model4 <- lm(avg_teu_z ~ UNRATE_z ,data = un_twitter)
+summary(model4)
+
+
+ggplot(un_twitter, aes(x = UNRATE_z, y = avg_teu_z)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue", linewidth = 1) +
+  labs(
+    x = "Unemployment rate",
+    y = "TEU WGT",
+    title = "Relationship between unemployment rate and TEU WGT"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+model5 <- lm(avg_teu ~ spread,data = yield_twitter)
+summary(model5)
+
+
+ggplot(yield_twitter, aes(x = spread, y = avg_teu)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue", linewidth = 1) +
+  labs(
+    x = "10 yr - 3yr yield",
+    y = "Twitter Economic Uncertainty",
+    title = "Monthly US Bond Yield Spread and Economic Uncertianty (2011-2023)"
+  ) +
+  theme_minimal()
+```
+```{r}
+anxiety <- read.csv("economic_anxiety_data.csv")
+
+anxiety_avg <- anxiety %>% group_by(year) %>% summarise(anxiety_avg = mean(sim_econ_anxiety))
+anxiety_yield <- inner_join(anxiety_avg,yield_yearly)
+anxiety_yield <- anxiety_yield %>% filter(year>2010)
+ggplot(anxiety_yield, aes(x = spread, y = anxiety_avg)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue", linewidth = 1) +
+  labs(
+    x = "10 yr - 3yr yield",
+    y = "Pop Music Anxiety",
+    title = "Monthly US Bond Yield Spread and Pop Music Anxiety (2011-2023)"
+  ) +
+  theme_minimal()
+
+model7 <- lm(anxiety_avg ~ spread, data=anxiety_yield)
+summary(model7)
+
+
+## TWitter
+twitter_yearly <- twitter %>%
+  mutate(year = floor_date(date, "year")) %>%
+  group_by(year) %>%
+  summarise(avg_teu = mean(`TEU-WGT`, na.rm = TRUE))
+twitter_yearly$year <- year(twitter_yearly$year)
+
+anxiety_twitter <- inner_join(anxiety_avg,twitter_yearly)
+
+
+
+model8 <- lm(anxiety_avg ~ avg_teu, data=anxiety_twitter)
+summary(model8)
+
+ggplot(anxiety_twitter, aes(x = avg_teu, y = anxiety_avg)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, color = "blue", linewidth = 1) +
+  labs(
+    x = "Pop Music Anxiety",
+    y = "Twitter Economic Uncertainty",
+    title = "Pop Music Anxiey and Economic Uncertianty (2011-2023)"
+  ) +
+  theme_minimal()
+```
+```{r}
+df_bb <- read.csv("Hot100.csv")
+yield_yearly$Year <- yield_yearly$year
+df_comb <- inner_join(df_bb,yield_yearly)
+
+df_year <- df_comb %>%
+  filter(year > 2005) %>%
+  group_by(year) %>%
+  summarise(
+    avg_dance = mean(Danceability, na.rm = TRUE),
+    avg_valence = mean(Valence, na.rm = TRUE),
+    avg_tempo = mean(Tempo, na.rm = TRUE),
+    avg_energy = mean(Energy, na.rm = TRUE),
+    avg_duration = mean(Duration, na.rm = TRUE),
+    spread = mean(spread, na.rm = TRUE)
+  )
+
+ggplot(df_year, aes(x = year, y = avg_energy)) +
+  geom_line(color = "#2C7BB6", linewidth = 1.2) +
+  geom_point(color = "#2C7BB6", size = 2) +
+  labs(
+    title = "Average Energy by Year",
+    x = "Year",
+    y = "Average danceability"
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+```{r}
+model9  <- lm(avg_dance ~ year, data = df_year)
+model10 <- lm(avg_duration ~ year, data = df_year)
+
+summary(model9)
+summary(model10)
+
+```
+
+```{r}
+ggplot(df_year, aes(x = spread, y = log(avg_dance))) +
+  geom_point(size = 3, alpha = 0.7, color = "#2C7BB6") +
+  geom_smooth(method = "lm", linewidth = 1.2, color = "#2C7BB6") +
+  labs(
+    title = "Danceability and Yield Curve Spread",
+    x = "Yield curve spread",
+    y = "Average danceability"
+  ) +
+  theme_minimal(base_size = 14)
+
+```
+
+
+
