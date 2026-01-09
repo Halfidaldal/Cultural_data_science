@@ -3,9 +3,9 @@ title: "Cultural data science"
 author: 'Johannes Rambøll & Halfdan Nordahl '
 date: "2025-11-15"
 output:
-  word_document: default
-  html_document: default
   pdf_document: default
+  html_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -69,6 +69,10 @@ summary(twitter_model)
 ```
 ### Halfdan
 ```{r}
+
+```
+
+```{r}
 # Aggregate Yield Data by Year for music analysis
 yield_yearly <- yield_curve %>%
   mutate(Year = year(Date)) %>%
@@ -79,12 +83,14 @@ yield_yearly <- yield_curve %>%
 df_bb <- read.csv("Hot100.csv")
 
 # Join Billboard data with yearly yield data
-df_analysis <- inner_join(df_bb, yield_yearly, by = "Year") %>%
+df_analysis <- inner_join(df_bb, yield_yearly, by = "Year")  %>%
   filter(Year < 2020)
 
 # Mixed model: Danceability predicted by spread with random effect for year
 mixed_model <- lm(Danceability ~ spread, data = df_analysis)
 summary(mixed_model)
+
+qqnorm(residuals(mixed_model))
 
 # For plotting, calculate yearly averages
 df_year <- df_analysis %>%
